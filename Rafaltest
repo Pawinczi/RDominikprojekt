@@ -1,0 +1,53 @@
+# -*- coding: utf-8 -*-
+
+import Rafaldane
+import sqlite3
+import unittest
+
+db_path = 'Rafal.db'
+
+class RepositoryTest(unittest.TestCase):
+
+    def setUp(self):
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute('DELETE FROM Pracownicy')
+        c.execute('DELETE FROM Wydzial')
+        c.execute('''INSERT INTO Wydzial (id, nazwa, miasto, ulica, lokal) VALUES('W_1', 'Wydział Matematyki', 'Gdańsk', 'Jakaś', '29B')''')
+        c.execute('''INSERT INTO Pracownicy (imie, nazwisko, pesel, stanowisko, wydzial) VALUES('Jan', 'Kowalski', 68081103540, 'Pracownik', 'W_1')''')
+        c.execute('''INSERT INTO Pracownicy (imie, nazwisko, pesel, stanowisko, wydzial) VALUES('Joanna', 'Kowalska', 66032011759, 'Naukowiec', 'W_1')''')
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute('DELETE FROM Pracownicy')
+        c.execute('DELETE FROM Wydzial')
+        conn.commit()
+        conn.close()
+
+    def testGetByIdInstance(self):
+        wydzial = Rafaldane.WydzialRepository().getById('W_1')
+        self.assertIsInstance(wydzial, Rafaldane.Wydzial, "Objekt nie jest klasy Wydzial")
+
+    def testGetByIdNotFound(self):
+        self.assertEqual(Rafaldane.WydzialRepository().getById('W_20'),
+                None, "Powinno wyjść None")
+
+    def testGetByIdInvitemsLen(self):
+        self.assertEqual(len(Rafaldane.WydzialRepository().getById('W_1').pracownicy),
+                2, "Powinno wyjść 2")
+
+    def testDeleteNotFound(self):
+        self.assertRaises(Rafaldane.RepositoryException,
+                Rafaldane.WydzialRepository().delete, 'W_30')
+
+    def testDeleteNotFound2(self):
+        self.assertRaises(Rafaldane.RepositoryException,
+                Rafaldane.WydzialRepository().delete2, 11)
+
+
+
+if __name__ == "__main__":
+    unittest.main()
