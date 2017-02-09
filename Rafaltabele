@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+
+import sqlite3
+
+# ilosc_pracownikow INTEGER NOT NULL
+db_path = 'Rafal.db'
+conn = sqlite3.connect(db_path)
+
+c = conn.cursor()
+#
+# Tabele
+#
+c.execute('''
+          CREATE TABLE Wydzial
+          ( id VARCHAR(5) PRIMARY KEY,
+            nazwa VARCHAR(30) NOT NULL,
+            miasto VARCHAR(20) NOT NULL,
+            ulica VARCHAR(40) NOT NULL,
+            lokal VARCHAR(3) NOT NULL
+          )
+          ''')
+c.execute('''
+          CREATE TABLE Pracownicy
+          ( imie VARCHAR(10) NOT NULL,
+            nazwisko VARCHAR(20) NOT NULL,
+            pesel INTEGER PRIMARY KEY,
+            stanowisko VARCHAR(20) NOT NULL,
+            wydzial VARCHAR(5) NOT NULL,
+           FOREIGN KEY(wydzial) REFERENCES Wydzial(id)
+          )
+          ''')
