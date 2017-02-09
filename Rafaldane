@@ -1,0 +1,242 @@
+# -*- coding: utf-8 -*-
+
+import sqlite3
+from datetime import datetime
+
+db_path = 'Rafal.db'
+
+class RepositoryException(Exception):
+    def __init__(self, message, *errors):
+        Exception.__init__(self, message)
+        self.errors = errors
+
+
+class Wydzial():
+    """Model Wydzialu
+    """
+    def __init__(self, id, nazwa='', miasto='', ulica='', lokal='', pracownicy=[]):
+        self.id = id
+        self.nazwa = nazwa
+        self.miasto = miasto
+        self.ulica = ulica
+        self.lokal = lokal
+        self.pracownicy = pracownicy
+        self.liczba = len(self.pracownicy)
+
+    def __repr__(self):
+        return "<Wydzial(id='%s', nazwa='%s', miasto='%s', ulica='%s', lokal='%s', ilosc_pracownikow='%s', pracownicy='%s')>" % (
+                    self.id, self.nazwa, self.miasto, self.ulica, self.lokal, str(self.liczba), str(self.pracownicy)
+                )
+
+
+class Pracownik():
+    """Model pracownika
+    """
+    def __init__(self, pesel, imie='', nazwisko='', stanowisko='',wydzial=""):
+        self.imie = imie
+        self.nazwisko = nazwisko
+        self.pesel = pesel
+        self.stanowisko = stanowisko
+        self.wydzial = wydzial
+
+    def __repr__(self):
+        return "<Pracownik(imie='%s', nazwisko='%s', pesel='%s', stanowisko='%s')>" % (
+                    self.imie, self.nazwisko, str(self.pesel), self.stanowisko
+                )
+
+
+class Repository():
+    def __init__(self):
+        try:
+            self.conn = self.get_connection()
+        except Exception as e:
+            raise RepositoryException('GET CONNECTION:', *e.args)
+        self._complete = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type_, value, traceback):
+        self.close()
+
+    def complete(self):
+        self._complete = True
+
+    def get_connection(self):
+        return sqlite3.connect(db_path)
+
+    def close(self):
+        if self.conn:
+            try:
+                if self._complete:
+                    self.conn.commit()
+                else:
+                    self.conn.rollback()
+            except Exception as e:
+                raise RepositoryException(*e.args)
+            finally:
+                try:
+                    self.conn.close()
+                except Exception as e:
+                    raise RepositoryException(*e.args)
+
+class WydzialRepository(Repository):
+
+    def add(self, wydzialy):
+        """Metoda dodaje pojedyńczy wydział do bazy danych,
+        wraz ze wszystkimi pracownikami.
+        """
+        try:
+            c = self.conn.cursor()
+            c.execute('INSERT INTO Wydzial (id, nazwa, miasto, ulica, lokal) VALUES(?, ?, ?, ?, ?)',
+                        (wydzialy.id, wydzialy.nazwa, wydzialy.miasto, wydzialy.ulica, wydzialy.lokal)
+                    )
+            if wydzialy.pracownicy:
+                for pracownik in wydzialy.pracownicy:
+                    try:
+                        c.execute('INSERT INTO Pracownicy (imie, nazwisko, pesel, stanowisko, wydzial) VALUES(?,?,?,?,?)',
+                                        (pracownik.imie, pracownik.nazwisko, pracownik.pesel, pracownik.stanowisko, wydzialy.id)
+                                )
+                    except Exception as e:
+                        raise RepositoryException('błąd dodawania danych: %s, do wydziału: %s' %
+                                                    (str(pracownik), str(wydzialy.id))
+                                                )
+        except Exception as e:
+            raise RepositoryException('błąd dodawania wydziału %s' % str(wydzialy))
+
+    def add2(self, pracownik):
+        """Dodaje pojedyńczego pracownika
+        """
+        try:
+            c = self.conn.cursor()
+            c.execute('INSERT INTO Pracownicy (imie, nazwisko, pesel, stanowisko, wydzial) VALUES(?, ?, ?, ?, ?)',
+                        (pracownik.imie, pracownik.nazwisko, pracownik.pesel, pracownik.stanowisko, pracownik.wydzial)
+                    )
+        except Exception as e:
+            raise RepositoryException('błąd dodawania pracownika %s' % str(pracownik))
+
+    def delete(self, wydzialy):
+        """Metoda usuwa pojedyńczy wydział z bazy danych,
+        wraz ze wszystkimi pracownikami.
+        """
+        try:
+            c = self.conn.cursor()
+            c.execute('DELETE FROM Pracownicy WHERE wydzial=?', (wydzialy.id,))
+            c.execute('DELETE FROM Wydzial WHERE id=?', (wydzialy.id,))
+
+        except Exception as e:
+            raise RepositoryException('błąd usuwania wydziału %s' % str(wydzialy))
+
+    def delete2(self, pracownik):
+        """"Usuwanie pracownikó po nr pesel"""
+        try:
+            c = self.conn.cursor()
+            c.execute('DELETE FROM Pracownicy WHERE pesel=?', (pracownik.pesel,))
+        except Exception as e:
+            raise RepositoryException('błąd usuwania pracownika %s' % str(pracownik))
+
+    def getById(self, id):
+        """Podaje wydział po id
+        """
+        try:
+            c = self.conn.cursor()
+            c.execute("SELECT * FROM Wydzial WHERE id=?", (id,))
+            inv_row = c.fetchone()
+            wydzialy = Wydzial(id=id)
+            if inv_row == None:
+                wydzialy=None
+            else:
+                wydzialy.nazwa = inv_row[1]
+                wydzialy.miasto = inv_row[2]
+                wydzialy.ulica = inv_row[3]
+                wydzialy.lokal = inv_row[4]
+                c.execute("SELECT * FROM Pracownicy WHERE wydzial=?", (id,))
+                inv_items_rows = c.fetchall()
+                items_list = []
+                for item_row in inv_items_rows:
+                    item = Pracownik(imie=item_row[0], nazwisko=item_row[1], pesel=item_row[2], stanowisko=item_row[3])
+                    items_list.append(item)
+                wydzialy.pracownicy=items_list
+                wydzialy.liczba = len(items_list)
+        except Exception as e:
+            raise RepositoryException('błąd w wyszukiwaniu wydziału: %s' % str(id))
+        return wydzialy
+
+    def update(self, wydzialy):
+        """Metoda uaktualnia pojedynczy wydział w bazie danych,
+        wraz ze wszystkimi pracownikami.
+        """
+        try:
+            inv_oryg = self.getById(wydzialy.id)
+            if inv_oryg != None:
+                self.delete(wydzialy)
+            self.add(wydzialy)
+
+        except Exception as e:
+            raise RepositoryException('błąd w aktualizacji %s' % str(wydzialy))
+
+
+
+if __name__ == '__main__':
+    try:
+        with WydzialRepository() as wydzialy_repository:
+            wydzialy_repository.add(
+                Wydzial(id = 'W_1', nazwa = 'Wydzial Matematyki', miasto = 'Saneskobar', ulica = 'Nowa', lokal = '20A',
+                        pracownicy = [
+                            Pracownik(imie = "Jan", nazwisko = "Kowalski", pesel = 38070506988, stanowisko = "Dziekan"),
+                            Pracownik(imie = "Joanna", nazwisko = "Znana", pesel = 66102216321, stanowisko = "Prodziekan"),
+                            Pracownik(imie = "Andrzej", nazwisko = "Kluska", pesel = 85061502856, stanowisko = "Sprzatacz"),
+                            Pracownik(imie = "Jerzy", nazwisko = "Glowa", pesel = 91100613658, stanowisko = "Pracownik naukowy"),
+                        ]
+                    )
+                )
+            wydzialy_repository.complete()
+    except RepositoryException as e:
+        print(e)
+
+    print WydzialRepository().getById('W_1')
+
+    try:
+        with WydzialRepository() as wydzialy_repository:
+            wydzialy_repository.update(
+                Wydzial(id = 'W_1', nazwa = 'Wydzial Matematyki', miasto = 'Saneskobar', ulica = 'Stara', lokal = '26C',
+                        pracownicy = [
+                            Pracownik(imie = "Jan", nazwisko = "Kowalski", pesel = 38070506988, stanowisko = "Dziekan"),
+                            Pracownik(imie = "Joanna", nazwisko = "Znana", pesel = 66102216321, stanowisko = "Prodziekan"),
+                            Pracownik(imie = "Andrzej", nazwisko = "Kluska", pesel = 85061502856, stanowisko = "Sprzatacz"),
+                            Pracownik(imie = "Jerzy", nazwisko = "Glowa", pesel = 91100613658, stanowisko = "Pracownik naukowy"),
+                        ]
+                    )
+                )
+            wydzialy_repository.complete()
+    except RepositoryException as e:
+        print(e)
+
+    print WydzialRepository().getById('W_1')
+
+    try:
+        with WydzialRepository() as wydzialy_repository:
+            wydzialy_repository.delete2( Pracownik(pesel = 66102216321) )
+            wydzialy_repository.complete()
+    except RepositoryException as e:
+        print(e)
+
+    print WydzialRepository().getById('W_1')
+
+    try:
+        with WydzialRepository() as wydzialy_repository:
+            wydzialy_repository.add2(
+                Pracownik(imie = "Jan", nazwisko = "Sobieznany", pesel = 49070218438, stanowisko = "Prodziekan", wydzial = 'W_1'),
+            )
+            wydzialy_repository.complete()
+    except RepositoryException as e:
+        print(e)
+
+    print WydzialRepository().getById('W_1')
+
+    try:
+        with WydzialRepository() as wydzialy_repository:
+            wydzialy_repository.delete( Wydzial(id = 'W_1') )
+            wydzialy_repository.complete()
+    except RepositoryException as e:
+        print(e)
